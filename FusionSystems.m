@@ -1,4 +1,4 @@
-//This file is created by Parker and Semeraro.
+//This file is created by Parker and Semeraro. This is version two. It corrects variious errors and adds further functionality
 //It contains programs designed to calculate with fusion systems.  
 //It also has programs to find all saturated fusion systems on 
 //a given p-group with trivial $p$-core and $p$-quotient. 
@@ -7,7 +7,7 @@
 //``Algorithms for fusion systems with applications 
 //to $p$-groups of small order" by Parker and  Semeraro
 //It also contains other functions that we found useful.
-//It works on Magma V2.25-4.  Load the file by Attach("FusionSystems.m");
+//It works on Magma V2.25-4.  Load the file by Attach("FusionSystems.m");#
 
 freeze;
 declare type FusionSystem;
