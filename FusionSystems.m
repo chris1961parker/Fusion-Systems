@@ -25,9 +25,9 @@ declare attributes GrpPC: autogrp, autoperm, autopermmap, autF;
 /// j: W--> K
 ///////////////////////////////////////////////////////////////////////
 intrinsic SubInvMap(j::Map,K::Grp,W::Grp)-> Grp
-{applies a inverse of a map to a subgroup}
+{applies inverse of a map to a subgroup}
 k:= Inverse(j);
-return sub<K| {k(x): x in Generators(W)}>;
+return sub<K| {k(x): x in Generators(W)},Kernel(j)>;
 end intrinsic;
 
 
@@ -45,31 +45,41 @@ end intrinsic;
 //////Here $X \le G$, $Y \le G$ and  $g\in G$ with //////$X^g \le Y$.
 /////////////////////////////////////////
 
-intrinsic ConjtoHom(X::Grp, Y::Grp,g::GrpElt)->Map
+intrinsic ConjtoHom(X::Grp, Y::Grp,g::GrpElt)->GrpHom
 {Return the homomorphism induced by conjugation}
 
 require  X^g subset Y: "X not conjugate in Y by g"; 
 alpha:=hom<X->Y|x:->x^g>;
 return alpha;
 end intrinsic;
+/////////////////////////////////////////////////
+intrinsic ConjtoAuto(X::Grp,g::GrpElt,AA::GrpAuto)->GrpAutoElt
+
+{Return the automorphism induced by conjugation}
+
+require  X^g subset X: "X not not normalized by g"; 
+MakeAutos(X);
+alpha:=AA!hom<X->X|x:->x^g>;
+return alpha;
+end intrinsic;
 //////////////////////////////////////////////
 /////creates all the aspects of aut groups.
 ////////////////////////////////////////////
-intrinsic MakeAutos(x::Grp)-> AutoGrp
+intrinsic MakeAutos(x::Grp)
 {Makes an automorphism group and its permutation representation}
-if assigned(x`autogrp) then return x`autogrp; end if;
+if assigned(x`autogrp) then return; end if;
  x`autogrp := AutomorphismGroup(x);
     x`autopermmap, x`autoperm:= PermutationRepresentation(x`autogrp); 
-    return x`autogrp;
+   // return x`autogrp;
 end intrinsic;
 /////////////////////////////////////////////////////////////
-//A function which for $X$ normal in $Y$ creates $\Aut_Y(X)$. 
+//A function which for $X$ normal in $Y$ creates $Aut_Y(X)$. 
 ////////////////////////////////////////////////////////////
 
 intrinsic AutYX(Y::Grp,X::Grp)-> GrpAuto
 {Creates the automorphism group of X induced by conjugation by elements of Y}
 require IsNormal(Y,X):"X is not a normal subgroup of Y";
- M:=MakeAutos(X); 
+MakeAutos(X); 
 A:= sub<X`autogrp|{ConjtoHom(X,X,y):y in Generators(Y)}>;
 return A;
 end intrinsic;
@@ -111,12 +121,31 @@ end intrinsic;
 intrinsic IsCharacteristic(G::Grp,H::Grp)->Bool
 {Checks if subgroup H of G is characteristic}
 require H subset G:"second term is not a subgroup of first";
-M:= MakeAutos(G);
+MakeAutos(G);
 for a in Generators(G`autogrp) do
 if (a(H) eq H) eq false then return false; end if;
 end for;
 return true;
 end intrinsic;
+
+
+
+
+intrinsic IsInvariant(A::GrpAuto,G::Grp,H::Grp)->Bool
+{Checks if subgroup H is invariant under the automorphisms A of G }
+require H subset G:"second term is not a subgroup of first";
+MakeAutos(G);
+for a in Generators(A) do
+if (a(H) eq H) eq false then return false; end if;
+end for;
+return true;
+end intrinsic;
+
+
+
+
+
+
 ///////////////////////////////////////
 ////// IsStronglypEmbeddedMod(G,Ker,p): 
 //////does G contain a Strongly p-embedded subgroup?
@@ -127,7 +156,7 @@ intrinsic IsStronglypEmbeddedMod(G::Grp,ker::Grp,p::RngIntElt)->Bool
 {Determines whether G/ker has a strongly p-embedded subgroup}
 Sylow:=sub<G|SylowSubgroup(G,p),ker>; 
   if IsNormal(G,Sylow) then return false; end if;
-         SSylow:= {sub<G|x`subgroup,ker>:x in Subgroups(Sylow:OrderEqual:=p*#ker)}; 
+        SSylow:= {sub<G|x`subgroup,ker>:x in Subgroups(Sylow:OrderEqual:=p*#ker)}; 
         HS:= sub<G|{Normalizer(G,x):x in SSylow}>;
         HS:= sub<G|HS,Normalizer(G,Sylow)>;
        if #HS eq #G then return false; end if;
@@ -154,9 +183,12 @@ Sylow:=SylowSubgroup(G,p);
    RR:=[];
    HS:= Normalizer(G,Sylow);
    F:= ConjugacyClasses(HS); 
-   for x in F do if x[1] eq p then 
-    HS:=sub<G|HS, Normalizer(G,sub<G|x[3]>)>; end if;
-       if HS eq G then return false; end if; end for; 
+   for x in F do 
+	   if x[1] eq p then 
+	    	HS:=sub<G|HS, Normalizer(G,sub<G|x[3]>)>; 
+	   end if;
+       if HS eq G then return false; end if;
+   end for; 
 return true;
 end intrinsic;
 
@@ -166,7 +198,6 @@ end intrinsic;
 
 intrinsic RandomAuto(A::GrpAuto)->Map
 {Selects a  random element from the automorphism group}
-
 a,B:=  PermutationRepresentation(A);
 alpha := Inverse(a)(Random(B));
 return alpha;
@@ -175,62 +206,111 @@ end intrinsic;
 
 
 ////////////////////////////////////////////////////////////////////////////
-/////// Would like to make orbits of automorphism group on subgroups.
+/////// This makes orbits of automorphism group on subgroups.
 ///////Here Q is a subgroup of P and AFP \le Aut(P). We 
 ///////determine Q^A=[Q,Q2,\dots Qs] and N_A(Q)
 ////// Elt is a sequence of elements [w1,w2, dots, ws] 
 ////// which map elements of the Q to the corresponding element Qi.
 ///////////////////////////////////////////////////////////////////////////
 
-intrinsic AutOrbit(P::Grp,Q::Grp,AFP::GrpAuto)->SeqEnum,Grp,SeqEnum
-{ Detemines the orbits of a subgroup Q under the automorphism group A of 
-of Aut(P)}
+intrinsic AutOrbit(P::Grp,Q::Grp,AFP::GrpAuto:Printing:=false)->SeqEnum,Grp,SeqEnum
+{ Determines the orbits of a subgroup Q under the automorphism group AFPQ of 
+of P}
    require Q subset P:"the second term in not a subgroup of the first";
-
+    MakeAutos(P);
     N:= Normalizer(P,Q);
-   
-
-     
-    NN:= sub<AFP|{ ConjtoHom(P, P,n):n in Generators(N)}>; 
+    gamma:= P`autopermmap;
+    Pp:=P`autoperm;
+    StB:= sub<AFP|{ ConjtoAuto(P,n,AFP):n in Generators(N)}>; 
+    StBp:= sub<Pp| {gamma(ConjtoAuto(P,n,P`autogrp)):n in Generators(N)}>;
     T:= Transversal(P,N); 
-  Elt:= [AFP!ConjtoHom(P, P,n):n in T];
-  Orb:= [Q^n:n in T];
-    M:= MakeAutos(P);
-    while #AFP ne #NN*#Orb do  
-        
-         new :=0;
-        
-        xx:= RandomAuto(AFP);
-        for w in [1..#Orb] do
-            W:= Orb[w];
-            Qwx :=  SubMap(xx, P, W);
-             y:= Index(Orb,Qwx);
-             if y ne 0 and new eq 0 then 
-                pi:= Elt[w]*xx*Elt[y]^-1; NN:= sub<AFP|NN,pi>; new:= 1;   
-                if  #AFP eq #NN*#Orb then    return Orb, NN, Elt; end if;
+    Elt:= [ConjtoAuto(P,n,AFP):n in T];
+    EltOrig:=Elt;
+    Orb:= [Q^n:n in T];
+
+    afp:= #AFP;
+    while afp ne #StB*#Orb do  if Printing then  afp,  #StB*#Orb; end if; 
+        alpha:= RandomAuto(AFP);  
+    
+            Q:= Orb[1];
+            Qwalpha :=  SubMap(alpha, P, Q);
+             y:= Index(Orb,Qwalpha);
+             //if y ne 0, then Qwalpha is in the orbit and we add a generator to StB. 
+             if y ne 0 then
+                alphanew :=   alpha*Elt[y]^-1; 
+                alphanewp:=gamma(P`autogrp!alphanew); 
+                if alphanewp in StBp eq false then
+                    StB:= sub<AFP|StB,alphanew>; 
+              StBp:= sub<P`autoperm|StBp,alphanewp>;
+                    if  afp eq #StB*#Orb then  return Orb, StB, Elt; end if;
+              end if;  
              end if;
-             if y eq 0 then 
-                    Na:= Normalizer(P,Qwx);
-                    Nw:= sub<AFP|{ xx* ConjtoHom(P, P,n)*Inverse(xx):n in Generators(N)}>;
-                      Tw:= Transversal(P,Na); 
-                    Eltw:= [Elt[w]*xx*AFP!ConjtoHom(P, P,n):n in Tw];
-                    Orbw:= [Qwx^n:n in Tw];
+             //if y eq 0, then we have a new element for the orbit.
+             if y eq 0 then
+                    Eltw:= [AFP!(e*alpha):e in EltOrig];
+                    Orbw:= [e(Q): e in Eltw];       
                     Orb:= Orb cat Orbw;
                     Elt := Elt cat Eltw; 
-             if  #AFP eq #NN*#Orb then   return Orb, NN, Elt; end if;
-             continue;
+                    if  afp eq #StB*#Orb then   return Orb, StB, Elt ;end if;
+             end if;
+   
+
+    end while;    
+    return Orb, StB, Elt;
+end intrinsic;
+
+intrinsic AutOrbitOld(P::Grp,Q::Grp,AFP::GrpAuto)->SeqEnum,Grp,SeqEnum
+{ Determines the orbits of a subgroup Q under the automorphism group A of 
+of P}
+   require Q subset P:"the second term in not a subgroup of the first";
+    MakeAutos(P); 
+    N:= Normalizer(P,Q);
+    gamma:= P`autopermmap;
+    Pp:=P`autoperm;
+    StB:= sub<AFP|{ ConjtoHom(P, P,n):n in Generators(N)}>; 
+    StBp:= sub<Pp| {gamma(P`autogrp!ConjtoHom(P, P,n)):n in Generators(N)}>;
+    T:= Transversal(P,N); 
+    Elt:= [AFP!ConjtoHom(P, P,n):n in T];
+    Orb:= [Q^n:n in T];
+
+    afp:= #AFP;
+    while afp ne #StB*#Orb do  
+        alpha:= RandomAuto(AFP); 
+        for w in [1..#Orb] do
+            W:= Orb[w];
+            Qwalpha :=  SubMap(alpha, P, W);
+             y:= Index(Orb,Qwalpha);
+             //if y ne 0, then Qwalpha is in the orbit and we add a generator to StB. 
+             if y ne 0 then
+                alphanew :=   Elt[w]*alpha*Elt[y]^-1; 
+                alphanewp:=gamma(P`autogrp!alphanew); 
+                 if alphanewp in StBp eq false then
+                    StB:= sub<AFP|StB,alphanew>; 
+               StBp:= sub<P`autoperm|StBp,alphanewp>;
+                    if  afp eq #StB*#Orb then    return Orb, StB, Elt; end if;
+              end if; 
+             end if;
+             //if y eq 0, then we have a new element for the orbit.
+             if y eq 0 then 
+                    Nwalpha:= Normalizer(P,Qwalpha); 
+                    Tw:= Transversal(P,Nwalpha);
+                    Eltw:= [AFP!(Elt[w]*alpha*ConjtoHom(P, P,n)):n in Tw];
+                    Orbw:= [Qwalpha^n:n in Tw];
+                    Orb:= Orb cat Orbw;
+                    Elt := Elt cat Eltw; 
+                    if  afp eq #StB*#Orb then   return Orb, StB, Elt; end if;
              end if;
         end for;  
 
     end while;
-    return Orb, NN, Elt;
+    
+    return Orb, StB, Elt;
 end intrinsic;
-
 ///////////////////////////////////
 //////We do the same thing for elements
 /////////////////////////////////////
 intrinsic AutOrbit(P::Grp,Q::GrpElt,AFP::GrpAuto)->SeqEnum,Grp,SeqEnum
-{ Detemines the orbits of an element Q under the automorphism group A of 
+{ Determines the orbits of an element Q under the automorphism group A of 
 of Aut(P)}
    require Q in P:"the second term in not a subgroup of the first";
     Orb:= [Q];
@@ -265,12 +345,12 @@ end intrinsic;
 
 ///////////////////
 intrinsic FocalSubgroupTest(B::Grp,S::Grp, Essentials::SeqEnum,AutF::Assoc)->
-Bool{Tests if S eq Focal subgroup in potential system};
+Bool,Grp{Tests if S eq Focal subgroup in potential system};
 Foc:=sub<S|{(s,b):s in Generators(S),  b in Generators(B)}>;
 for e in Essentials do  
 Foc:= sub<S|Foc, {x^-1*aa(x): x in e, aa in Generators(AutF[e])}>;
 end for;
-return Foc eq S;
+return Foc eq S, Foc;
 end intrinsic;
 
 ///////////////////////////////
@@ -286,7 +366,7 @@ for i := 2 to #Es do  F:= F meet Es[i];end for;
     for x in A do F := F meet x; end for;
  end for;
  end while;
-M:=MakeAutos(F); K:= Inn(F); 
+MakeAutos(F); K:= Inn(F); 
     for i := 1 to #Es do  K:=  sub<F`autogrp|K,Generators(AutE[i])>; end for;
     return F,K;
 end intrinsic;
@@ -360,30 +440,29 @@ for x in SF do
 return #FC eq 1, FC;
 
 end intrinsic;
-////////////////////////////////////////////////////////////////////////
-/// IsBurnside(S,P): 
-////determines whether P satisfies the Burnside test
-////A subgroup with this property is never F-essential in a fusion system
-////This is a test which detects that $Aut_S(Q) \cap O_p(Aut(Q)) \ne 1$ without 
-////calculating in Aut_F(Q).Do we need it?
-//////////////////////////////////////////////////////////////////////
+ 
 
 /////////////////////////////////
 ///////can Q be a sylow of a group with s strongly p-embedded subgroup
 /////////////////////////////////
 intrinsic IsStronglypSylow(Q::Grp)->Bool, Bool
-{Can P be the Sylow subgroup of a group with a strongly p-embedded Sylow p?}
+{Can Q be the Sylow subgroup of a group with a strongly p-embedded Sylow p? Also returns whether cyclic or quaternion}
 
 p:= FactoredOrder(Q)[1][1];
-Testers:= {
-PCGroup(Sylow(SL(2,p^2), p)),
-PCGroup(Sylow(SL(2,p^3), p)),
-PCGroup(Sylow(SL(2,p^4), p)),
-PCGroup(Sylow(SL(2,p^5), p)),
-PCGroup(Sylow(SL(2,p^6),p)),
-PCGroup(Sylow(SL(2,p^7), p)), 
-PCGroup(Sylow(SU(3,p), p)),
-PCGroup(Sylow(SU(3,p^2), p))};
+
+QC:=IsQuaternionOrCyclic(Q);
+    if QC eq false then
+   
+X:=PCGroup(CyclicGroup(p));
+Y:=X;
+Testers:={};
+for i := 1 to 7 do 
+Y:= DirectProduct(Y,X); Testers:= Testers join{Y};
+end for;
+
+Testers:= Testers join{
+PCGroup(ClassicalSylow(SU(3,p), p)),
+PCGroup(ClassicalSylow(SU(3,p^2), p))};
 if p eq 3 then Testers:= Testers join {PCGroup(Sylow(PGammaL(2,8),3))}; end if;
 if p eq 2   then Testers:= Testers join {PCGroup(Sylow(ChevalleyGroup("2B",2,8),2))}; end if;
 if p eq 5   then Y:= sub<Sym(25)|
@@ -393,8 +472,6 @@ if p eq 5   then Y:= sub<Sym(25)|
 Testers:= Testers join {PCGroup(Y)}; end if;
 
  
-QC:=IsQuaternionOrCyclic(Q);
-    if QC eq false then
         ///If QC is not quaternion or cyclic, then Out_F(P) cannot be soluble. 
         //So there should be 3 or more prime factors by ///Burnside#s p^aq^b theorem. 
         //Next we know that if not quaternion or cyclic, then Q should be isomorphic to one of 
@@ -433,6 +510,9 @@ if #NSP gt max then maxenough:= true; end if;
  
 if #NSP eq max and  not exists(t){x:x in ProtoEssentials| IsConjugate(B,NSP,x)}  then maxenough:= true; end if;
  
+ 
+//The next test  
+ 
  PC:= Core(S,P);
  if Index(NSP,P) eq p and Index(S,NSP) eq p and 
     Index(P,PC) eq p and IsCharacteristic(NSP,PC) then 
@@ -442,15 +522,11 @@ if #NSP eq max and  not exists(t){x:x in ProtoEssentials| IsConjugate(B,NSP,x)} 
         beta:= ConjtoHom(x,NSP,b); 
         alpha:= ConjtoHom(NSP,x,b^-1);
         Z:= Conjugates(S,P);
-        
-
         if 
         forall{mm: mm in x`autF |  
                     exists{gamma: gamma in Generators(mm)|not SubMap( beta*gamma*alpha,NSP,P) in Z}} 
                     then maxenough:= true; 
         end  if;
-             
-        
         end if;
  end if;      
         
@@ -460,7 +536,7 @@ if #NSP eq max and  not exists(t){x:x in ProtoEssentials| IsConjugate(B,NSP,x)} 
 
  
 
-M:= MakeAutos(P);
+MakeAutos(P);
 AutP:=P`autogrp;
 mapP:= P`autopermmap;
 AutPp:= P`autoperm;
@@ -470,18 +546,16 @@ AutSP:=AutYX(Normalizer(S,P),P );
 AutSPp:=sub<P`autoperm|{mapP(g): g in Generators(AutSP)}>;
 AutBP:=AutYX(Normalizer(B,P),P );
 AutBPp:=sub<P`autoperm|{mapP(g): g in Generators(AutBP)}>;
-
 NormAutSPp:=Normalizer(AutPp,AutSPp);
  
- 
- 
+
 Candidates :=[];
  
 
  
  ct:= 0;
 for Ga in Cand[P] do ct:= ct+1;  
-//if Printing then if ct mod 10 eq 1 then print "done", ct, "of ", #Cand[P]; end if; end if;
+//if Printing then if ct mod 10 eq 1 then print "done (modulo 10)", ct, "of ", #Cand[P]; end if; end if;
     
     GG:=SubMap(mapP,AutPp,Ga);  
     NGSP:= Normalizer(GG,AutSPp);
@@ -519,7 +593,7 @@ for Ga in Cand[P] do ct:= ct+1;
           NormAutBPXXap:= SubMap(XX`autopermmap,XX`autoperm,NormAutBPXXa);
           Tran1:= Transversal(NormAutBPXXap,Normalizer(NormAutBPXXap,NGPap));
           
-          
+          if Printing then   print "Tran1 has ", #Tran1, "elements";  end if;
           ToB :={};
              for tr in Tran1 do 
                 YY2:= sub<XX`autoperm|NGPap^tr,BBB>; 
@@ -530,22 +604,23 @@ for Ga in Cand[P] do ct:= ct+1;
            
           
           Transv:=Transversal(NormAutBPp,Normalizer(NormAutBPp,GG));  
+          if Printing then   print "Transv has ", #Transv, "elements";  end if;
+
                 for aa in Transv  do 
                     NGPxx:= NGP^aa;
                     NGPxxa:=sub<AutP|{Inverse(mapP)(alpha):alpha in Generators(NGPxx)}>;
                     YYY1:=SubMap(XX`autopermmap,XX`autoperm,sub<XX`autogrp|{w: w in Generators(NGPxxa)}>);
                     YYY:=sub<XX`autoperm|YYY1,BBB>; 
                     if  (Normalizer(YYY,SSS) eq BBB)  then 
-                        NewSub:=sub<AutP|{Inverse(mapP)(gg^aa): gg in Generators(GG)}>;
-                        for xxx in Candidates do if xxx eq NewSub then continue aa; end if; end for;
+                        NewSub:=sub<AutP|{Inverse(mapP)(gg^aa): gg in Generators(GG)}>; 
+                        for xxx in Candidates do 
+                        	if xxx eq NewSub then continue aa; end if; 
+                        end for;
                         Append(~Candidates,NewSub); 
                     end if;
                 end for;//aa
            end for;//GG
            end if;
-    
-    
-     
 
     
     if FirstTime eq false then   
@@ -562,11 +637,8 @@ for Ga in Cand[P] do ct:= ct+1;
     end if;
     
 end for;//Ga
-
-///Need to check why we need this next step.  We are appending too many groups.
   
-  
-
+if Printing then print  "In AutFPCand we find", #Candidates, "candidates";end if;
 
 return  Candidates; 
 end intrinsic;
@@ -639,10 +711,10 @@ S:= phiB(S1);
 F`group:= S;    
 F`borel:= B;  
   
-  M:=MakeAutos(S);
+  MakeAutos(S);
   F`essentialautos:= [];
    F`essentials:=[phiB(Group(Autos[i])):i in [1..#Autos]];
- for x in F`essentials do M:=MakeAutos(x); end for;
+ for x in F`essentials do MakeAutos(x); end for;
     for ix in [1..#Autos] do
         x:= F`essentials[ix];  
    XX:=sub<x`autogrp|[InvphiB*w*phiB:w in Generators(Autos[ix])]>; 
@@ -691,7 +763,7 @@ end for;
 for ii in [1..#F`subgroups] do 
 x:= F`subgroups[ii]; 
 if IsSCentric(S,x) then 
-M:= MakeAutos(x);end if; end for;
+MakeAutos(x);end if; end for;
  
 return F;
 end intrinsic;
@@ -707,7 +779,7 @@ intrinsic Print(F::FusionSystem)
 
 E:= [(#F`essentialautos[i]*#Centre(F`essentials[i]))/#F`essentials[i]:i in [2.. #F`essentialautos]];
 E1:= [#F`essentials[i]:i in [2.. #F`essentials]];
-printf "Fusion System with %o", #F`essentials-1; printf "\ essential subgroups", "\n"; 
+printf "Fusion System with %o", #F`essentials-1; printf "\ F-classes of essential subgroups", "\n"; 
 printf "\nThey have orders: %o", E1, "\n"; 
 printf "\Out_F(E)  have orders: %o", E; printf 
 "\nOut_\F(S) has order  %o", #F`essentialautos[1]/#Inn(F`group);
@@ -768,47 +840,6 @@ end intrinsic;
 ////if testing if potential automiser sequence, then we use FCoreTest
 /////////////////////////
 //
-intrinsic Core(F::FusionSystem)->Grp
-{Determines the the FCore of a fusion system}
-FF:= F`group;S:= FF;
-for x in F`essentials do FF := FF meet x; end for;
-     
-    SFF:={x`subgroup:x in  Subgroups(FF)};
-    FFC:= sub<FF|>;
-        for x in  SFF do
-            if IsNormal(S,x) eq false then continue x; end if;
-            for E in F`essentials do 
-                AutFE:= F`essentialautos[Index(F`essentials,E)];
-                for y in Generators (AutFE) do
-                    if sub<S|{y(xx) :xx in Generators(x)}> ne x then 
-                    continue x; 
-                    end if;
-                end for;
-            end for;
-        FFC := sub<S|FFC,x>;
-end for;
-return FFC;
-end intrinsic;
-//
-///////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////
-/////FocalSubgroup #Uses 1.8 from AOV to determine the focal subgroup. 
-///////////////////////////////////////////////////////////////////////
-
-
-intrinsic FocalSubgroup(F::FusionSystem)->Grp
-{Creates the focal subgroup of the fusion system}
-S:= F`group;  
-Foc:=sub<S| >;
-for e in F`essentials do 
-    i:= Index(F`essentials,e);
-    AutFE:= F`essentialautos[i];
-    Foc:= sub<S|Foc, {x^-1*aa(x): x in e, aa in Generators(AutFE)}>;
-end for;
-return Foc;
-end  intrinsic;
- 
-
 
 
 intrinsic Core(F::FusionSystem)->Grp
@@ -838,6 +869,26 @@ for x in SF do
  
 return #FC eq 1, FC;
 end intrinsic;
+//
+///////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+/////FocalSubgroup #Uses 1.8 from AOV to determine the focal subgroup. 
+///////////////////////////////////////////////////////////////////////
+
+
+intrinsic FocalSubgroup(F::FusionSystem)->Grp
+{Creates the focal subgroup of the fusion system}
+S:= F`group;  
+Foc:=sub<S| >;
+for e in F`essentials do 
+    i:= Index(F`essentials,e);
+    AutFE:= F`essentialautos[i];
+    Foc:= sub<S|Foc, {x^-1*aa(x): x in e, aa in Generators(AutFE)}>;
+end for;
+return Foc;
+end  intrinsic;
+ 
+
 //////////////////////////////////////////////////////
 ///////////////////////////////////////////////
 //This determines a graph with edges AB   for A and B 
@@ -1257,7 +1308,7 @@ intrinsic TransportAutomorphismsYtoX(F::FusionSystem,AutF::Assoc,Y::Grp,X::Grp)
 {Transports the automorphism group of the first group to 
 the second assuming they are F-conjugate}
 require IsConjugate(F,Y,X):"The groups are not F-conjugate";
- M:= MakeAutos(X);
+ MakeAutos(X);
 
 
     Ax:= X`autogrp;
@@ -1348,7 +1399,7 @@ for subexponent:=ExpS-2 to 2 by -1 do
             TTTS:= [sub<NBP|SubInvMap(a, NBP, x`subgroup),P>:x in Subgroups(NBPoverP:OrderDividing:=#S)|x`order ne 1];
                 for ccc:= 1 to #TTTS do
                  x := TTTS[ccc]; 
-                    M:= MakeAutos(x);
+                    MakeAutos(x);
 
                     if x in SS then
                         AutFx := AutF[x];
@@ -1461,12 +1512,13 @@ SSP:= [sub<NSP|SubInvMap(a, NSP, x`subgroup),P>:x in Subgroups(NSPoverP)|x`order
    for OverGrpP in SSP do 
         BClassOverGrpP, alpha:= IdentifyBClass(F,OverGrpP);
         RepOverGrpP:= SS[BClassOverGrpP];
-        M:=MakeAutos(OverGrpP);
+        MakeAutos(OverGrpP);
         Ax:=  OverGrpP`autogrp;
         beta:= ConjtoHom(RepOverGrpP,OverGrpP,alpha^-1);
         beta1:= ConjtoHom(OverGrpP,RepOverGrpP,alpha); 
         AutFx:= sub<Ax|{beta1*gen*beta : gen in Generators(AutF[RepOverGrpP])}>;      
-        AA:= AutF[P]; M:= MakeAutos(P);
+        AA:= AutF[P]; 
+        MakeAutos(P);
         AAp:= sub<P`autoperm|{P`autopermmap(gAA):gAA in Generators(AA)}>;
         action := AutYX (OverGrpP,P);
         actionp:= SubMap(P`autopermmap,AAp,action);
@@ -1658,7 +1710,8 @@ end for;
 for XXct in [1..#ImEssentials] do XX:=ImEssentials[XXct];
     for ii in [1..#XX] do e:= XX[ii]; if e in F2`subgroups then continue; end if;
             jj:= IdentifyBClass(F2,e);
-            P:= F2`subgroups[jj];M:= MakeAutos(P);
+            P:= F2`subgroups[jj];
+            MakeAutos(P);
             a,b :=IsConjugate(F2`borel,e,P);
             bb:= ConjtoHom(e,P,b); 
             bbb:= ConjtoHom(P,e,b^-1);    
@@ -1713,7 +1766,7 @@ B1:= Normalizer(G,T); T1:= Sylow(B1,p);
 require  T1 eq sub<G|T,Centralizer(T1,T)>:"system cannot be saturated";   
  Testers:= {Sylow(SL(2,p^2), p),Sylow(SL(2,p^3), p),Sylow(SL(2,p^4), p),Sylow(SL(2,p^5), p),
 Sylow(SL(2,p^6), p), Sylow(SU(3,p), p),Sylow(SU(3,p^2), p)};// Add more?
-
+		
 
 
 
@@ -1764,7 +1817,7 @@ EEPC:=[SubMap(PhiB,B2,x):x in EE];
 EEAA:=[];
 for i := 1 to #EEPC do
 Es:= EEPC[i];
-M:= MakeAutos(Es);
+MakeAutos(Es);
 EEAA[i]:= sub<Es`autogrp|{Inverse(PhiB)*gamma*PhiB:gamma in GrpEssentialAutos[EE[i]]}>; 
 end for;
 
@@ -1793,7 +1846,7 @@ end intrinsic;
 /////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 intrinsic IsStronglyClosed(F::FusionSystem, P::Grp)->Bool
-{Returns true if the subgroups is strongle closed}
+{Returns true if the subgroups is strongly closed}
 SC:= true;
 if IsWeaklyClosed(F,P) eq false then return false; end if;
 
@@ -1894,7 +1947,7 @@ for zz in [1..#ImEssentials] do
        //Initialize the automorphism group of the images
         for ii in [1..#ImEssentialsCalc] do  
             x:= ImEssentialsCalc[ii];
-            M:= MakeAutos(x); 
+            MakeAutos(x); 
         end for;     
     ImAutEssentialsCalc:=[];
     for x in ImEssentialsCalc do 
@@ -1914,7 +1967,7 @@ for XXct in [1..#ImEssentials] do
      if e in F2`subgroups then continue; end if;
         jj:= IdentifyBClass(F2,e);
         P:= F2`subgroups[jj];
-        M:=MakeAutos(P);
+        MakeAutos(P);
         a,b :=IsConjugate(F2`borel,e,P);
         bb:= ConjtoHom(e,P,b); 
         bbb:= ConjtoHom(P,e,b^-1);    
@@ -2169,6 +2222,7 @@ return AllOvers;
 
 end intrinsic;
 
+
 intrinsic OverGroupsSylowEmbedded(G::Grp,H::Grp,INN::Grp,p::RngIntElt)-> SeqEnum
 {Creates overgrps of H in G which have H as a sylow p-subgroup and such that they are generated by conjugates of H. To get the full list we will use the Fratinni argument}
 
@@ -2261,6 +2315,8 @@ AAM:=[x: x in AllOvers|Index(x,H) mod p ne 0];
 return AAM;
 end intrinsic;
 
+
+
 ////////////////////////////////////////////////////////////////////////
 
 intrinsic AutomorphismGroup(F::FusionSystem,P::Grp)-> GrpAuto
@@ -2280,7 +2336,7 @@ IP:= V!Index(SS,P);
 
 ComponentP:= Setseq(IdentifyFOrbit(F,P));
  
-for x in ComponentP do M:=MakeAutos(SS[Index(x)]); end for;
+for x in ComponentP do MakeAutos(SS[Index(x)]); end for;
 
 AutP:= P`autogrp;
 
@@ -2404,7 +2460,7 @@ end for;
 return TT;
 end intrinsic;
 //////////////////////////////////////////
-intrinsic SemiDirectProduct(V::ModGrp)-> Grp
+intrinsic SemiDirectProduct(V::ModGrp:Perm:= false)-> Grp
 {Constructs the semidirect product of a module and the module for the group}
 G:= Group(V);
 F:= Field(V);
@@ -2413,10 +2469,14 @@ W:= DirectSum(T,V);
 G1:= MatrixGroup(W);
 n:= Dimension(W);
 H:= GL(n,F);
-J:= Identity(H);J:= Eltseq(J);
-J[n+1]:= Identity(F);J:= H!J; 
-H:= sub<H|J,G1>;
-return H;
+K:= sub<H|G1>;
+
+for k in [1..n-1] do J:= Identity(H);J:= Eltseq(J);
+J[k*n+1]:= Identity(F);J:= H!J;  
+K:= sub<H|J,K>;
+
+end for;if Perm then K:= CosetImage(K,G1); end if;
+return K;
 end intrinsic;
 //////////////////////////////////////////
 intrinsic AutFCore(Es::SeqEnum,AutE::SeqEnum)->Grp,GrpAuto
@@ -2431,41 +2491,39 @@ for i := 2 to #Es do  F:= F meet Es[i];end for;
     for x in A do F := F meet x; end for;
  end for;
  end while;
-M:=MakeAutos(F); K:= Inn(F); 
+MakeAutos(F); K:= Inn(F); 
     for i := 1 to #Es do  K:=  sub<F`autogrp|K,Generators(AutE[i])>; end for;
     return F,K;
 end intrinsic;
-
-
+ 
 ////////////////////////////////////////////////
-intrinsic AllProtoEssentials(S::Grp:SaveEach)-> SeqEnum
-{Makes all fusion systems with O_p(F)=1 and O^p(\F)= \F}
- 
+intrinsic AllProtoEssentials(S::Grp:OpTriv:=false, pPerfect:= false,Printing:= false)-> SeqEnum
+{Makes all protosessentials up to automorphisms of S the parameters ask for  O_p(F)=1 and O^p(\F)= \F}
 
-FNumber:=0; //This is to help when saving fusion systems
+ 
+ 
 ZZ:= Integers(); //Integer Ring
-FF:=[]; //We will put the possible systems in here  
-
-p:= FactoredOrder(S)[1][1]; 
-
-//Use that we know fusion systems with an abelian subgroup
-
-if IsAbelian(S) then return FF; end if;
-
-///Lemma~7.1 shows that $S:Z(S) \gt p^2 or |S|\le p^3
-
-if Index(S,Centre(S)) le p^2 and #S ge p^4  then return FF; end if; 
  
+p:= FactoredOrder(S)[1][1]; 
+ nn:= Valuation(#S,p);
+
+
 
 //Here are automorphisms of S and centric subgroups of S
 S:= PCGroup(S);
+
+MakeAutos(S);
 InnS:=Inn(S);
 AutS:= S`autogrp;
 map:= S`autopermmap;
 AutSp:= S`autoperm;
 InnSp:= SubMap(map,AutSp, InnS);
-SS:= [x`subgroup:x in Subgroups(S)|IsSCentric(S,x`subgroup)];
+Sbar, bar:= S/Centre(S);
+TT:= Subgroups(Sbar);
+SS:= [Inverse(bar)(x`subgroup):x in TT|IsSCentric(S,Inverse(bar)(x`subgroup))];
+if Printing eq true then print "the group has", #SS, "centric subgroups"; end if;
  
+
 
 ///////////////////////////////////
 ///We precalculate certain properties of S. The objective here is to eliminate
@@ -2476,7 +2534,31 @@ SS:= [x`subgroup:x in Subgroups(S)|IsSCentric(S,x`subgroup)];
 /////////////////////////////////////
 
 ProtoEssentials:=[];// This sequence will contain the ProtoEssential subgroups
-
+//
+if IsMaximalClass(S) and #S ge p^5 then 
+    LL:= LowerCentralSeries(S);  
+    T:=[];
+     Append(~T,Centralizer(S, LL[2],LL[4]));
+     C:= Centralizer(S, LL[nn-2]);
+     if C in T eq false then 
+        Append(~T,C); end if; 
+     T:= T cat [x:x in SS| #x eq p^2 and LL[nn-1] subset x and not x subset  T[1]  and not x subset C ] 
+     cat 
+     [x:x in SS| #x eq p^3 and LL[nn-2] subset x  and not x subset  T[1]  and not x subset C ]; 
+      TT:=[];
+     for x in T do 
+            Nx:=Normalizer(S,x);
+        	A:=AutYX(Nx,x);
+        	Ap:= SubMap(x`autopermmap,x`autoperm ,A);
+        	Innerp:= SubMap(x`autopermmap,x`autoperm , Inn(x));
+            RadTest:=#(Ap meet pCore(x`autoperm, p)) eq  #Innerp;
+            if not RadTest then continue x; end if;
+        	Append(~TT,x);
+     end for;         
+       ProtoEssentials:=   TT;
+end if; 
+        
+if IsMaximalClass(S) eq false then  
 for x in SS do   
 	if x eq S then continue x; end if; 
 	if IsCyclic(x) then  continue x; end if;
@@ -2492,14 +2574,15 @@ for x in SS do
 	FQTest := Index(x,Frat) ge P^2;
         //This is a bound obtained by saying that $\Out_\F(x)$ acts faithfully on $x/\Phi(x)$.  
         //The order of such faithful modules is at least $|\Out_S(x)|^2$.
- 	if FQTest eq false then continue x; end if;
-	SylTest, QC:=IsStronglypSylow(Ap/Innerp);
+ 	if FQTest eq false then continue x; end if; 
+	SylTest, QC:=IsStronglypSylow(Ap/Innerp);print "here";
         //If $x$ is essential, then $\Out_F(x)$ should have a strongly $p$-embedded. 
         //Here we check that the Sylow $p$-subgroup is compatible with this.
 	if SylTest eq false   then continue x; end if; 
 	if QC eq false and IsSoluble(x`autoperm)  then   continue x; end if; 
 	ProtoEssentials:= Append(ProtoEssentials,x); 
 end for;
+end if;
 ////////////////////////////////
 ///We need some subgroups in ProtoEssentials;
 ///////////////////////////////////
@@ -2510,9 +2593,9 @@ if  #ProtoEssentials eq 0 then return []; end if;
 ///Notice that if E is protoessential, then so is E\alpha for alpha in AutS
 ProtoEssentialAutClasses:= Setseq({Set(AutOrbit(S,PE,S`autogrp)):PE in ProtoEssentials});
 ProtoEssentialAutClasses:= [Rep(x):x in ProtoEssentialAutClasses];
+ 
   
-  
-if CharSbgrpTest(ProtoEssentials,S) eq true then return FF; end if;
+if OpTriv then if CharSbgrpTest(ProtoEssentials,S) eq true then return []; end if; end if;
    
  
     ///This test takes Q as the intersection of all the members of the members 
@@ -2520,8 +2603,8 @@ if CharSbgrpTest(ProtoEssentials,S) eq true then return FF; end if;
     //of ProtoEssentials and S. If some non-trivial subgroup is then O_p(\F)\ne 1.
 
    
-H:= sub<S|ProtoEssentials,{x^-1*a(x):a in Generators(S`autogrp), x in S}>; 
-if  H ne S then return []; end if;
+if pPerfect then H:= sub<S|ProtoEssentials,{x^-1*a(x):a in Generators(S`autogrp), x in S}>; 
+if  H ne S then return []; end if; end if;
  //This tests is with this set of protoessentials that O^p(\F) <F. 
    
 /////////////////////
@@ -2529,9 +2612,11 @@ if  H ne S then return []; end if;
 ///////and check that they have strongly p-embedded subgroups.
 ///////////////////
 
-for i in [1..#ProtoEssentialAutClasses] do
+
+
+for i in [1..#ProtoEssentialAutClasses] do 
 	P:= ProtoEssentialAutClasses[i];
-	M:= MakeAutos(P);
+	MakeAutos(P);
 	AutP:=P`autogrp;
 	mapP:= P`autopermmap;
 	AutPp:= P`autoperm;
@@ -2579,7 +2664,7 @@ for i in [1..#ProtoEssentialAutClasses] do
 		AutPCandidates:= APC;
 	end if;
         
-	P`autF:=[];//This is where we store all potential aut_F(P) up to Aut(P) conjugacy.
+	P`autF:=[];//This is where we store all potential Aut_F(P) up to Aut(P) conjugacy.
 
        	for GG in AutPCandidates do
 		if  IsStronglypEmbeddedMod(GG,InnPp,p) eq false then continue GG; end if;
@@ -2597,15 +2682,16 @@ end for;  // i in [1..ProtoEssentialAutClasses]
 ProtoEssentialAutClasses:= [x:x in ProtoEssentialAutClasses|assigned(x`autF)];
 ProtoEssentialAutClasses:= [x:x in ProtoEssentialAutClasses|#x`autF ne 0];
 
-if #ProtoEssentialAutClasses eq 0 then return []; end if;
- 
-// ProtoEssentials:=[];
-// for y in  ProtoEssentialAutClasses do
-// ProtoEssentials:=  ProtoEssentials cat AutOrbit(S,y,S`autogrp);
-// end for;  
+if Printing then 
+	print "The set ProtoEssentialAutClasses has", #ProtoEssentialAutClasses,"elements";  
+end if;
+if Printing then 
+	for x in ProtoEssentialAutClasses do  
+		print "the protoessential aut class  representaive have ", #x`autF, "potential automorphism groups"; 
+	 end for; 
+end if;
 
-if CharSbgrpTest(ProtoEssentialAutClasses,S)  eq true then return []; end if;
-print "The set ProtoEssentialAutClasses has", #ProtoEssentialAutClasses,"elements"; 
+ 
 
 return ProtoEssentialAutClasses;
 end intrinsic;
@@ -2618,6 +2704,7 @@ end intrinsic;
 intrinsic Blackburn(p::RngIntElt,n::RngIntElt,alpha::RngIntElt,beta::RngIntElt,gamma::RngIntElt,delta::RngIntElt)->Grp
 {constructs Blackburn's metaabelian maximal class group of order p^n}
 require IsPrime(p) : "the first element must be a prime"; 
+require n eq 6:"this is only implemented for n=6";
 
 
         S<s, s1,s2,s3,s4,s5> := Group<s, s1,s2,s3,s4,s5|
@@ -2775,8 +2862,9 @@ end for;
 end intrinsic;
 
 //////////////////////////////////////////////////////////
-intrinsic AllFusionSystems(S::Grp:SaveEach:=false,Printing:=false,OutFSOrders:=[])-> SeqEnum
+intrinsic AllFusionSystems(S::Grp:SaveEach:=false,Printing:=false,OutFSOrders:=[],OpTriv:=true,pPerfect:= true)-> SeqEnum
 {Makes all fusion systems with O_p(F)=1 and O^p(\F)= \F}
+ 
  
  
 FNumber:=0; //This is to help when saving fusion systems
@@ -2784,7 +2872,7 @@ ZZ:= Integers(); //Integer Ring
 FF:=[]; //We will put the possible systems in here  
 
 p:= FactoredOrder(S)[1][1]; 
- 
+ nn:= Valuation(#S,p);
 
 
 
@@ -2796,17 +2884,30 @@ if IsAbelian(S) then return FF; end if;
 
 if Index(S,Centre(S)) le p^2 and #S ge p^4  then return FF; end if; 
  
+ 
 
 //Here are automorphisms of S and centric subgroups of S
 S:= PCGroup(S);
+
+MakeAutos(S);
 InnS:=Inn(S);
 AutS:= S`autogrp;
 map:= S`autopermmap;
 AutSp:= S`autoperm;
 InnSp:= SubMap(map,AutSp, InnS);
-SS:= [x`subgroup:x in Subgroups(S)|IsSCentric(S,x`subgroup)];
- 
 
+//We use Cor 6.2 from ANTONIO Diaz, ADAM GLESSER, NADIA MAZZA, AND SEJONG PARK
+if p ge 5 and #FactoredOrder(S`autogrp) eq 1 then return []; end if; 
+
+
+Sbar, bar:= S/Centre(S);
+TT:= Subgroups(Sbar);
+SS:= [Inverse(bar)(x`subgroup):x in TT|IsSCentric(S,Inverse(bar)(x`subgroup))];
+if Printing eq true then print "the group has", #SS, "centric subgroups"; end if;
+ 
+ 
+ 
+ 
 ///////////////////////////////////
 ///We precalculate certain properties of S. The objective here is to eliminate
 ///most  p-groups S before we calculate and construct the possible Borel subgroups 
@@ -2816,7 +2917,32 @@ SS:= [x`subgroup:x in Subgroups(S)|IsSCentric(S,x`subgroup)];
 /////////////////////////////////////
 
 ProtoEssentials:=[];// This sequence will contain the ProtoEssential subgroups
+//
+if IsMaximalClass(S) and #S ge p^5 then 
+    LL:= LowerCentralSeries(S);  
+    T:=[];
+     Append(~T,Centralizer(S, LL[2],LL[4]));
+     C:= Centralizer(S, LL[nn-2]);
+     if C in T eq false then 
+        Append(~T,C); end if; 
+     T:= T cat [x:x in SS| #x eq p^2 and LL[nn-1] subset x and not x subset  T[1]  and not x subset C ] 
+     cat 
+     [x:x in SS| #x eq p^3 and LL[nn-2] subset x  and not x subset  T[1]  and not x subset C ]; 
+      TT:=[];
+     for x in T do 
+            Nx:=Normalizer(S,x);
+        	A:=AutYX(Nx,x);
+        	Ap:= SubMap(x`autopermmap,x`autoperm ,A);
+        	Innerp:= SubMap(x`autopermmap,x`autoperm , Inn(x));
+            RadTest:=#(Ap meet pCore(x`autoperm, p)) eq  #Innerp;
+            if not RadTest then continue x; end if;
+        	Append(~TT,x);
+     end for;         
+       ProtoEssentials:=   TT;
+end if; 
 
+        
+if IsMaximalClass(S) eq false  or #S le p^4 then  
 for x in SS do   
 	if x eq S then continue x; end if; 
 	if IsCyclic(x) then  continue x; end if;
@@ -2840,19 +2966,20 @@ for x in SS do
 	if QC eq false and IsSoluble(x`autoperm)  then   continue x; end if; 
 	ProtoEssentials:= Append(ProtoEssentials,x); 
 end for;
+end if;
 ////////////////////////////////
 ///We need some subgroups in ProtoEssentials;
 ///////////////////////////////////
  
-if  #ProtoEssentials eq 0 then return []; end if; 
+ 
 
-  
+
 ///Notice that if E is protoessential, then so is E\alpha for alpha in AutS
 ProtoEssentialAutClasses:= Setseq({Set(AutOrbit(S,PE,S`autogrp)):PE in ProtoEssentials});
 ProtoEssentialAutClasses:= [Rep(x):x in ProtoEssentialAutClasses];
  
   
-if CharSbgrpTest(ProtoEssentials,S) eq true then return FF; end if;
+if OpTriv and  CharSbgrpTest(ProtoEssentials,S)   then return FF; end if;  
    
  
     ///This test takes Q as the intersection of all the members of the members 
@@ -2860,18 +2987,19 @@ if CharSbgrpTest(ProtoEssentials,S) eq true then return FF; end if;
     //of ProtoEssentials and S. If some non-trivial subgroup is then O_p(\F)\ne 1.
 
    
-H:= sub<S|ProtoEssentials,{x^-1*a(x):a in Generators(S`autogrp), x in S}>; 
-if  H ne S then return []; end if;
+if pPerfect then H:= sub<S|ProtoEssentials,{x^-1*a(x):a in Generators(S`autogrp), x in S}>; 
+if  H ne S then return []; end if; end if;
  //This tests is with this set of protoessentials that O^p(\F) <F. 
-   
+     
 /////////////////////
 ///////Here we  make all the candidates for Out_\F(x) for x in ProtoEssentials 
 ///////and check that they have strongly p-embedded subgroups.
 ///////////////////
 
-for i in [1..#ProtoEssentialAutClasses] do
+
+for i in [1..#ProtoEssentialAutClasses] do 
 	P:= ProtoEssentialAutClasses[i];
-	M:= MakeAutos(P);
+	MakeAutos(P);
 	AutP:=P`autogrp;
 	mapP:= P`autopermmap;
 	AutPp:= P`autoperm;
@@ -2886,7 +3014,7 @@ for i in [1..#ProtoEssentialAutClasses] do
 	Candidates :=[];
     	pVal:=Valuation(#AutPp,p);
     	NormVal:=Valuation(#AutSPp,p);
-       
+      
         QC:=IsQuaternionOrCyclic(Q); 
         if not QC  then
             Mbgs:= NonsolvableSubgroups(M:OrderDividing:= ZZ!(#AutPp/((p^(pVal-NormVal)))));
@@ -2902,7 +3030,7 @@ for i in [1..#ProtoEssentialAutClasses] do
 		AutPCandidates:= APC;
 	    end if;//QC
                 
-    	if QC and IsCyclic(Q)  then
+    	if QC and IsCyclic(Q)  then  
                      AutPCandidates:= OverGroupsSylowEmbedded(M,AutSPp,InnPp,p);
         end if;  
 	
@@ -2941,7 +3069,7 @@ if #ProtoEssentialAutClasses eq 0 then return []; end if;
  
  
 
-if CharSbgrpTest(ProtoEssentialAutClasses,S)  eq true then return []; end if;
+if OpTriv and CharSbgrpTest(ProtoEssentialAutClasses,S)   then return []; end if;  
 if Printing then print "The set ProtoEssentialAutClasses has", #ProtoEssentialAutClasses,"elements";  end if;
 
 
@@ -2979,21 +3107,33 @@ if m ne 1  then
     BCand:= [Random(Complements(AA,InnSp)):AA in BCand];
     BCand:=[ AA:AA in BCand| #AA in OutFSOrders]; 
  end if;
-   
+ 
+
+ 
     for CC in BCand do
+    if not IsSoluble(CC) then print "Execution failed: The Borel group is not soluble ";   return []; end if;
         f:=hom<CC->AutS|g:->Inverse(map) (g)>;
-        C:= SubMap(f,AutS,CC);
-        B,phiB:= Holomorph(S, sub<AutS|C>);
-        T:= phiB(S);
+        C:= SubMap(f,AutS,CC);  
+        if #C ne 1 then B,phiB:= Holomorph(GrpFP,S, sub<AutS|C>); else B,phiB:= Holomorph(S, sub<AutS|C>);  end if; 
+       // B,phiB:= Holomorph(S, sub<AutS|C>);  
+        T:= phiB(S);  
+       
          B, theta := PCGroup(B); T:= theta(T); ///This will not work if B is not soluble.
         BB:=[B,T];
-        for x in ProtoEssentialAutClasses do Append(~BB,SubMap(phiB*theta,T,x)); end for;
-        for ii in [3..#BB] do xx:= BB[ii];yy:= ProtoEssentialAutClasses[ii-2]; M:= MakeAutos(xx);
+        
+        a, alpha:= IsIsomorphic(S,T); //phiB*theta does not work when Holomorph is calculcated with FP group
+          for x in ProtoEssentialAutClasses do Append(~BB,SubMap(alpha,T,x)); end for;
+        for ii in [3..#BB] do 
+        xx:= BB[ii];
+        yy:= ProtoEssentialAutClasses[ii-2];
+        MakeAutos(xx);
           
             WW:=[];
-            for jj in   [1..#yy`autF] do WGens:={}; Wx:= yy`autF[jj]; 
-                for gamma in Generators(Wx) do  WGens := WGens join {Inverse(phiB*theta)*gamma*phiB*theta}; end for;
-          WW[jj]:=sub<xx`autogrp|WGens>; 
+            for jj in   [1..#yy`autF] do 
+		    Wx:= yy`autF[jj]; 
+		    WGens :={
+		    Inverse(alpha)*gamma*alpha: gamma in  Generators(Wx)};
+		    WW[jj]:=sub<xx`autogrp|WGens>; 
             end for;
             xx`autF:= WW;
         end for;
@@ -3004,7 +3144,7 @@ else
     BB:=[T,T];
     for x in ProtoEssentialAutClasses do Append(~BB,SubMap( theta,T,x)); end for;
         for ii in [3..#BB] do 
-            xx:= BB[ii];yy:= ProtoEssentialAutClasses[ii-2]; M:= MakeAutos(xx);WW:=[];
+            xx:= BB[ii];yy:= ProtoEssentialAutClasses[ii-2]; MakeAutos(xx);WW:=[];
             for jj in   [1..#yy`autF] do 
                 WGens:={}; Wx:= yy`autF[jj]; 
                     for gamma in Generators(Wx) do  
@@ -3037,9 +3177,15 @@ print "**********************************************";
  
   B:= Bor[1];    
 S:= Bor[2];  
-M:=MakeAutos(S);
-    subsBS:=Subgroups(B: OrderDividing:=#S);
-    SS:=[x`subgroup:x in subsBS|IsSCentric(S,x`subgroup)];
+
+//We use the fact that if $B=S$ and p ge 5 then $O^p(\F)<\F$.
+if p ge 5 and B eq S then continue; end if;
+MakeAutos(S);
+    
+    	Bbar, bar:= B/Centre(S);
+	subsBS:= Subgroups(Bbar:OrderDividing:=#bar(S));
+	subsBS:= [Inverse(bar)(x`subgroup):x in subsBS];
+	SS:= [x:x in subsBS|IsSCentric(S,x)]; 
     AutFS:=AutYX(B,S);
     InnS:=Inn(S);
     AutS:= S`autogrp;
@@ -3053,13 +3199,14 @@ M:=MakeAutos(S);
     NAutB:= SubInvMap(alpha,AutS,NAutBp);
     ProtoEssentialAutClasses:=[Bor[j]:j in [3 ..#Bor]];
 
+//We explode the autclasses to get all protoessentials and ajoin their potential autogrps.
 ProtoEssentials:=[];
 for x in ProtoEssentialAutClasses do
     Xx, Stx, Rx := AutOrbit(S,x,S`autogrp); 
     PNew := [];
     for y in SS do
         if y in Xx then 
-            M:=MakeAutos(y); 
+            MakeAutos(y); 
             Append(~ProtoEssentials,y); 
             Append(~PNew,y);
         end if; 
@@ -3077,24 +3224,21 @@ for x in ProtoEssentialAutClasses do
 end for;//x
 
 
-
-//The next test uses Lemma 4.9 to show that P1 and P2 are not both essential.
+if OpTriv then 
+//The next test uses Lemma 4.10 to show that P1 and P2 are not both essential.
 // If P1 is essential, then P1' ne 1 and is normalized by Aut_\F(S) and Aut_F(E_1). This gives O_p(F) ne 1.
-if #ProtoEssentials eq 2 and p ge 5 and #S le p^6 then 
-    P1:= ProtoEssentials[1]; P2:= ProtoEssentials[2]; 
-     NSP2:= Normalizer(S,P2); a,b := IsConjugate(B,P1,NSP2);
- PC:= Core(S,P2);
- if Index(NSP2,P2) eq p and Index(S,NSP2) eq p and 
-    Index(P2,PC) eq p and IsCharacteristic(NSP2,PC) and IsCharacteristic(S,DerivedSubgroup(P1)) then ProtoEssentials:=[P2];
-    end if;
-end if;    
+	if #ProtoEssentials eq 2 and p ge 5 and #S lt p^(p+3) then 
+	    P1:= ProtoEssentials[1]; 
+	    P2:= ProtoEssentials[2]; 
+	    	if #P1 le #P2 then PP:= P2; P2:= P1; P2:= PP; end if; 
+	    NSP2:= Normalizer(S,P2);  
+	    PC:= Core(S,P2);
+	 	if IsConjugate(B,P1,NSP2) and Index(NSP2,P2) eq p and Index(S,NSP2) eq p and 
+	    Index(P2,PC) eq p and IsCharacteristic(NSP2,PC) and IsNormal(B,DerivedSubgroup(P1)) then 		ProtoEssentials:=[P2];
+	    	end if;
+	end if;    
+end if; //OpTriv
     
-
-
-
-
-
-
 
 
 
@@ -3107,24 +3251,23 @@ Candidates:= AssociativeArray(ProtoEssentials);
 
 for x in ProtoEssentials do Candidates[x]:= x`autF; end for; 
 
-
+if pPerfect then 
 //The next check is a preliminary focal subgroup check using that we know the Borel  subgroup. 
 //This often gets rid of the case when $B=S$
+	SB:= CommutatorSubgroup(S,B);
+	S1:= sub<S|SB,ProtoEssentials>;
+	if S1 ne S then   continue Bor; end if;
+end if;
 
-SB:= CommutatorSubgroup(S,B);
-S1:= sub<S|SB,ProtoEssentials>;
-if S1 ne S then   continue Bor; end if;
-
-
-if #ProtoEssentials eq 1  and IsNormal(B,ProtoEssentials[1]) then continue Bor; end if;
+if OpTriv   and #ProtoEssentials eq 1   and IsNormal(B,ProtoEssentials[1]) then continue Bor; end if; 
+  
 
 
 if Printing then print "There are", #ProtoEssentials, "proto-essential subgroups before the extension test.\nThey have orders", 
  Explode([#ProtoEssentials[i]: i in [1..#ProtoEssentials]]);end if;
 
 //We now make all the candidates for Aut_F(E) given our class representatives in 
-//E`autF. This means that we check if the automorphisms in $Aut(N_B(E),E)$ restrict to memebers of $\Aut_\F(E)$.
-
+//E`autF. This means that we check if the automorphisms in $Aut(N_B(E),E)$ restrict to members of $\Aut_\F(E)$.
 
 FirstTime := true;
 ProtoEssentialsT:= ProtoEssentials;
@@ -3144,13 +3287,16 @@ while #ProtoEssentialsT ne #ProtoEssentialsTT  do
     for i in [1..#ProtoEssentialsT] do
         P:=ProtoEssentialsT[i];
         if P in Done then continue i; end if;
-        M:= MakeAutos(P);
+        MakeAutos(P);
+         if Printing then print "About to Apply AutFPC"; end if;
         Candidates1[P]:=AutFPCandidates(B,S,P,ProtoEssentialsT,Candidates,FirstTime:Printing:= Printing); 
         //next we transfer the automorphisms to everything in the AutOrbit.
-        OrbP, SSt, Repp:= AutOrbit(B,P, NAutB);
+         if Printing then print "AutFPC complete"; end if;
+        OrbP, SSt, Repp:= AutOrbit(S,P, NAutB);
+        if Printing then print "the set Repp has", #Repp, "Members"; end if;
         for nn in [2..#Repp] do
             P1:=OrbP[nn];
-            M:= MakeAutos(P1);
+            MakeAutos(P1);
             beta:= Repp[nn]; 
             Candidates1[P1]:= [];
             for AP in Candidates1[P] do
@@ -3159,25 +3305,20 @@ while #ProtoEssentialsT ne #ProtoEssentialsTT  do
             end for;
         end for;
     Done := Done join Seqset(OrbP);
+     if Printing then print "the set Done", #Done, "Members"; end if;
     end for; //i
   ProtoEssentialsT:=[ProtoEssentialsT[Index(ProtoEssentialsT,x)]:x in ProtoEssentialsT| #Candidates1[x] ne 0];
 Candidates:= Candidates1; FirstTime:=false;
 end while;     
-
-   
-
-
-
-
-
-
 
  
 
 ProtoEssentials:= ProtoEssentialsT;
 if #ProtoEssentials eq 0 then continue Bor; end if;
 
-if Printing then print  #ProtoEssentialsT, "proto-essentials which pass both the  strongly p-embedded and extension test";end if;
+if Printing then print  #ProtoEssentialsT, 
+"proto-essentials which pass both the  strongly p-embedded 
+and extension test";end if;
 
 
 D:= Subsets({1..#ProtoEssentials});
@@ -3186,7 +3327,7 @@ D:= Subsets({1..#ProtoEssentials});
 
 ////////////////////////////////
 ///We look at the orbits of $N_Aut(S)(Aut_\F(S))$ on D. 
-///As we will consider all possible automosiers of members of protoessentials
+///As we will consider all possible automisers of members of protoessentials
 ///It suffices to look at $N_Aut(S)(Aut_\F(S))$ orbits and this will give us all 
 ///automorphism classes of fusion systems
 //////////////////////////
@@ -3197,31 +3338,33 @@ a, NNN:= AutOrbit(S,Pr,NAutB);
 NN := NN meet SubMap(alpha,AutSp,NNN);
 end for;
 
-    NN:= sub<NAutBp|NN,AutBp>; 
+   // NN:= sub<NAutBp|NN>; 
 TNB:= Transversal(NAutBp,NN);
 TransAutSB:=[Inverse(alpha)(xxx):xxx in TNB];
 
 DD:= D;
 DNew:={};
-while #DD ne 0 do x:= Rep(DD); 
+while #DD ne 0 do 
+    x:= Rep(DD); 
     DNew:= DNew join{x}; 
-    DDD:={};
-    DD:= DD diff {x};
+    DDD:={x};
+   
     for beta in TransAutSB do 
-	L := {beta(ProtoEssentials[w]):w in x};
-    end for;
-
-	LL:={};
-	for ll in L do
+	xnew := {beta(ProtoEssentials[w]):w in x};
+   	L:={};
+	for ll in xnew do
 		for Proto in ProtoEssentials do 
 		aa, bb:= IsConjugate(B, ll, Proto);
-			if aa then LL:= LL join{Proto}; end if;
+			if aa then L:= L join{Index(ProtoEssentials,Proto)}; end if;
 		end for;
 	end for;
-L:={Index(ProtoEssentials,ll):ll in LL};  
+  
+
 DDD:= DDD join {L};   
+   end for; //beta
 DD := DD diff DDD;
 end while; 
+
  
 D:= DNew;
  
@@ -3230,8 +3373,7 @@ D:= Setseq(D);
 ParallelSort(~D1,~D);
 D:=Reverse(D);
 
-
-//////////////NEW
+ // this tests if there is a conjugate of essential x  which is $B$ conjugate to a subgroup of essential $y$ which using all posibilities for Aut_\F(y) is we can see $x$ is not fully Normalized
  Forbiddenpairs :={};
  
  for x in ProtoEssentials do 
@@ -3248,6 +3390,7 @@ end for;
 if Printing then print "The number of forbidden pairs of essential subgroups is ", #Forbiddenpairs;end if;
 /////
 
+
 ////////////////Main Search starts here. 
 
 
@@ -3260,7 +3403,7 @@ for ss in [1..#D] do//This is the main loop considering all subsets of ProtoEsse
     ssSequence:=SetToSequence(EssSup);
     
  	Essentials:=[ProtoEssentials[i]: i in EssSup];
-    if #EssSup eq 1 and IsNormal(B,Essentials[1]) then continue ss; end if;
+   if OpTriv then if #EssSup eq 1 and IsNormal(B,Essentials[1]) then continue ss; end if;end if;
     if exists{w: w in Forbiddenpairs| w subset Essentials} then continue ss; end if;
 
   max:= Max({#e: e in Essentials});
@@ -3277,7 +3420,7 @@ for P in Essentials do
             Tst := Tst join {x subset M:x in PB};
          end for;
           if Tst eq {false} or P in Maxes then 
-            M:=MakeAutos(P);
+            MakeAutos(P);
             AutP:=P`autogrp;
             mapP:= P`autopermmap;
             AutPp:= P`autoperm;
@@ -3388,24 +3531,82 @@ for Q in Essentials do
 Orb, NN:=AutOrbit(S, Q,NAutB);
 NAutBQp:= NAutBQp meet SubMap(S`autopermmap, S`autoperm,NN);
 end for;
+
+
+T2:= Transversal(NAutBp,NAutBQp);
+L:= Set(Essentials);
+T3:= {y: y in T2|{Inverse(alpha)(y)(x): x in L} eq  L};
+NAutBQp:= sub<NAutBp|NAutBQp,T3>;
+
+
+NAutBQ:= SubInvMap( alpha, S`autogrp,NAutBQp); 
+
+
+CPCart:= Set(CPCart); 
+
+cpc:= #CPCart; 
  
-NAutBQ:= SubInvMap( alpha, S`autogrp,NAutBQp);
+//This defines an action of CPCart 
+  alpha:=S`autopermmap;
+  function Act(x)
+     tup:= x[1];ff:= x[1];
+     theta := x[2];
+     for i in [1..#Essentials] do 
+            	ee:= Essentials[i];  
+            	jj:= Index(Essentials,SubMap(theta,S,ee));
+            	eee:= Essentials[jj];  
+                J:= sub<eee`autogrp|{Inverse(theta)*gen*theta:gen in 
+                Generators(CandidatesNew[ee][ff[i]])}>; 
+                Jp:= SubMap(eee`autopermmap, eee`autoperm,J);
+                kk:= Index(CandidatesNewp[eee],Jp); 
+                jjj:= Index(Essentials,eee);
+                tup[jjj]:=kk;
+            end for;
+            return tup;
+ end function;
 
-
-
+  
+  
+  
+  
+  
+  while #CPCart ne 0 do  
+   Bob:= false; 
+   possFSys:=Rep(CPCart); 
  
+  //POrb is a partial orbit.  This speeds things up as finding large  full orbits seems to be more time consuming. This routine will with high probability find small orbits anyway. The strange choice to perform it twice is to get a balance between speed and getting enough elements of the orbit.
 
-
-
-Done :={};
-
-for possFSys in CPCart do   
+     POrb:= {possFSys, Act(<possFSys,NAutBQ.1>)  };
+     for i:= 1 to 2 do 
+      POrb2:= POrb;
+     	for x in Generators(NAutBQ) do;
+     		for ff in POrb2 do
+	     		z:= Act(<ff,x>);
+	     		if not z in CPCart then Bob := true; break i; end if;
+	     		POrb:= POrb join {z};
+	     	end for;
+	end for;
+     end for;
+     if Bob then CPCart:= CPCart diff POrb;continue; end if;//continues while
+   Bob:= false;
+     POrb2:= POrb;
+     for j := 1 to 3 do 
+     	x:= Random(Generators(NAutBQ));
+     	POrb2:= POrb;
+     	for ff in POrb2 do
+	     		z:= Act(<ff,x>);
+	     		if not z in CPCart then Bob := true; break j; end if;
+	     		POrb:= POrb join {z};
+	     	end for;
+     end for;
+  
  
- if possFSys in Done then continue possFSys; end if;
- 
- 
+ 	CPCart:= CPCart diff POrb; //removes the partial orbit
+   if Bob then continue; end if;//continues while
+   Bob:= false;
+   
     AutF:=AssociativeArray(ProtoEssentials); //this is the fusion system we will make
-    AutF[S]:=AutFS; // this was fixed at the start
+    AutF[S]:=AutFS; // this was fixed at the start it is Aut_B(S)
     ////We now populate AutF with the appropriate candidate automisers
     for k in [1..#possFSys] do
        AutF[ProtoEssentials[ssSequence[k]]]:=CandidatesNew[ProtoEssentials[ssSequence[k]]][possFSys[k]];
@@ -3415,67 +3616,36 @@ for possFSys in CPCart do
 	for e in Essentials do 
         	Autos:= Append(Autos,AutF[e]);    
    	end for;
-       Done := Done join {possFSys}; 
-       
-    FocTest:=FocalSubgroupTest(B,S, Essentials,AutF); 
-    FCorTest:= FCoreTest(S,Essentials,AutF); 
-     	if FocTest eq false then  continue possFSys; end if;
-	if FCorTest eq false then  continue possFSys; end if;
+     
+ 	if Printing then print "Remains to do",#CPCart, "of",cpc; end if; 
+     
+	if pPerfect and not FocalSubgroupTest(B,S, Essentials,AutF) then  continue; //while
+ 	end if;  
+ 	
+ 	
+  	if OpTriv and  not FCoreTest(S,Essentials,AutF) then  continue; end if;   
+
 
   //    This next test checks that if P is normal in S that its "obvious" automiser has $\Aut_S(P) as a Sylow.
     
     for xx in SS do 
-        if IsNormal(S,xx) eq false or #xx eq 1 then continue; end if;
+        if IsNormal(S,xx) eq false or #xx eq 1 then continue xx; end if;
         Exx:={w:w in Essentials|xx subset w};
         if #Exx ne 0 then 
-            M:= MakeAutos(xx);
+            MakeAutos(xx);
             Axx:= sub<xx`autogrp|AutYX(Normalizer(B,xx),xx)>;
             for yy in Exx do
                 Oxx,xxStab := AutOrbit(yy, xx,AutF[yy]);
                 Axx:= sub<xx`autogrp|Axx,Generators(xxStab)>;
             end for;
-            if ZZ!(#Axx/#AutYX(S,xx)) mod p eq 0 then  continue possFSys; end if;
+            if ZZ!(#Axx/#AutYX(S,xx)) mod p eq 0 then Bob:= true; break xx; end if;
         end if;
     end for;
-   
+   if Bob then continue; end if;//continues while
+   Bob:= false;
      
 //    
-     
-Orb:= [possFSys];
- 
 
-    Elt:= [Identity(NAutBQ)];
-    NN:= sub<NAutBQ|>;
-    while #NAutBQ ne #NN*#Orb do 
-    theta:= RandomAuto(NAutBQ);  
-        for ff in Orb do   
-            tup := [];
-            for ee in Essentials do 
-                J:= sub<ee`autogrp|{Inverse(theta)*gen*theta:gen in Generators(CandidatesNew[ee][ff[Index(Essentials,ee)]])}>; 
-                Jp:= SubMap(ee`autopermmap, ee`autoperm,J); 
-                kk:= Index(CandidatesNewp[ee],Jp); 
-                Append(~tup,kk);
-            end for;//ee 
-            aaa:= Rep(CPCart); 
-                for i4 in [1..#Essentials] do aaa[i4]:= tup[i4]; end for; 
-                // here we've just fixed that coercion doesn't work. should find type so that can fix this. So now the conjugate fusion systems is the tuple aaa. 
-   
-            ffi:=Index(Orb,ff);   
-         if aaa in Orb  then 
-                y:= Index(Orb,aaa); 
-                NN:=  sub<NAutBQ| NN,  Elt[ffi]*theta* Elt[y]^-1>;  
-                    if #NAutBQ eq #Orb*#NN then break; end if; 
-            else   
-            Append(~Orb,aaa); Append(~Elt,Elt[ffi]*theta);  
-            end if; //aaa
-        end for;//ff
-    end while;//while
-
- 
-  Done:= Done join Seqset(Orb);
- 
-  
-  
   
     N:= {1..#Essentials}; 
 	NN:= Subsets(N);
@@ -3490,24 +3660,24 @@ Orb:= [possFSys];
                     AutE:= [Autos[ww+1]:ww in sNN];Append(~AutE,AutF[S]);
                     Cor,AutCor:= AutFCore(Es,AutE);
                     n:=ZZ!(#AutCor/#AutYX(S,Cor));
-                    if n mod p eq 0 then  continue possFSys; end if;///Tests if Aut_S(x) a sylow p of AutCore.
+                    if n mod p eq 0 then  Bob:=true; break sNN; end if;///Tests if Aut_S(x) a sylow p of AutCore.
         end for;//sNN
            
+           if Bob then continue; end if;//continues while
+            Bob:=false;
            
            
            
-           
-           
-//F:= CreateFusionSystem(Autos); 
+//We now create the fusion system. We don't use the standard call as we have already done most of the calculation
 
 
 
 bounds:=[8,6,6,6];
-primes:=[2,3,4,4];
+primes:=[2,3,4,4]; 
 ///Puts the essentials in the standard order using group names.  
 //This will break if order of S is too big. Hence the else below
  
-if p in primes and #S1 le p^bounds[Index(primes,p)]  then  
+if p in primes and #S le p^bounds[Index(primes,p)]  then  
 RO:=[IdentifyGroup( Group(x)):x in Autos];
 ParallelSort(~RO,~Autos);
 Reverse(~Autos);
@@ -3521,7 +3691,7 @@ F:= New(FusionSystem);
 F`prime:=p;
 F`group:= S;    
 F`borel:= B;
-F`subgroups:=[x`subgroup:x in subsBS];
+F`subgroups:=[x:x in subsBS];
 F`essentialautos:= Autos;
 F`essentials := [];
 for x in Autos do
@@ -3530,7 +3700,7 @@ F`AutF:= AssociativeArray(F`subgroups);
 for x in F`essentials do 
 F`AutF[x] := F`essentialautos[Index(F`essentials,x)]; 
 end for; 
-               
+       //We only need  to check saturation on centrics. So we make a partial fusion graph.       
 if assigned(F`fusiongraph) eq false then  
     F`fusiongraph,F`maps:= FusionGraphSCentrics(F);
 end if;
@@ -3539,10 +3709,10 @@ F`classes:= ConnectedComponents(F`fusiongraph);
         if assigned(F`centrics) eq false then 
             F`centrics:={x:x in F`subgroups|IsCentric(F,x)}; end if; 
 
-                   for G in FF do 
-                            if IsIsomorphic(F,G) then delete F; continue  possFSys; end if; 
-                        end for;
-                        
+                  for G in FF do 
+                          if IsIsomorphic(F,G) then delete F; Bob:= true; break; end if; 
+                  end for;
+                  if Bob then continue; end if;Bob:=false;
             IS:= IsSaturated(F);
             if Printing then print "Executed saturation test: result is",IS; end if; 
                 if assigned(F`essentials) and IS then  
@@ -3553,13 +3723,21 @@ F`classes:= ConnectedComponents(F`fusiongraph);
                     end if; 
                 end if; 
  delete F; 
-   end for; //  possFSys
+   end while; //  possFSys
  
 end for;//ss
 end for;//Bor
 
-
- 
+GG:= FF;
+if #FF le 1 then return FF; end if; 
+FF:= [FF[1]];
+ for i in [2.. #GG] do
+ 	x:= GG[i];  
+ 	for y in FF do 
+ 		if IsIsomorphic(x,y) then continue i; end if;
+ 	end for; 
+ 	Append(~FF,x); 
+ end for; 
  
 return FF;
 end intrinsic;
@@ -3610,3 +3788,188 @@ FileName:="F" cat IntegerToString(grp) cat "-" cat IntegerToString(bor) cat "-"
 cat IntegerToString(count);
               SaveFS(FileName, [F]);
 end intrinsic;
+
+
+
+intrinsic Centralizer(G::Grp,A::Grp,B:Grp)->Grp
+{Return the centralizer in G of the the quotient A/B}
+require IsNormal(G,B): "B is not normalized by G"; 
+K:= Normalizer(G,A);
+ Q,a:= K/B;
+C:= Centralizer(Q,a(A));
+C:= SubInvMap(a,K,C); 
+return C;
+end intrinsic;
+
+
+
+
+
+intrinsic AbelianPearls(S::Grp:fusion:=true)->SeqEnum
+{Returns all fusion systems with just abelian Pearls provide anu such exists}
+S:= PCGroup(S);
+
+require IsMaximalClass(S): "S does not have maximal class";
+p:= FactoredOrder(S)[1][1];
+ZZ:= Integers();
+ 
+L:= LowerCentralSeries(S);
+gamma1:= Centralizer(S,L[2],L[4]);
+Z2:= L[#L-2]; 
+SS:= Subgroups(S:OrderEqual:=p^2);
+PotPearls:= {x`subgroup: x in SS| Normalizer(S,x`subgroup) eq sub<S|Z2,x`subgroup> and Exponent(x`subgroup) eq p};
+if #PotPearls eq 0 then return[]; end if;  
+MakeAutos(S);
+AutS:= S`autogrp;
+AutSp:= S`autoperm;
+map:= S`autopermmap;
+pVal:= Valuation(#AutSp,p); m:= ZZ!(#AutSp/p^pVal);
+BorelsandS:=[];
+if m lt p-1 then return[]; end if;
+        
+PAut, tt:= PCGroup(AutSp); 
+H:=HallSubgroup(PAut,-p); 
+K:= [wx`subgroup:wx in Subgroups(H)|wx`order ge p-1];
+
+
+BCand:=[];
+for k:= 1 to #K do  
+	K1:= K[k]; 
+    	for K2 in BCand do 
+    		if IsConjugate(PAut,K1,K2) then   continue k;   end if;
+    	end for; 
+	Append(~BCand,K1); 
+end for;
+BCand:= [SubInvMap(tt, AutSp, K1):K1 in BCand];
+Z:= Centre(S);
+MakeAutos(Z);
+ 
+BCand:= [k: k in BCand|#sub<Z`autogrp|Generators(  SubInvMap(map, AutS,k))> eq p-1];
+
+
+
+
+
+for CC in BCand do
+         f:=hom<CC->AutS|g:->Inverse(map) (g)>;
+          C:= SubMap(f,AutS,CC);  
+          B,phiB:=Holomorph(GrpFP,S, sub<AutS|C>); 
+        T:= phiB(S);  
+         B, theta := PCGroup(B); T:= theta(T);
+        BB:=[B,T];
+         for x in PotPearls do Append(~BB,SubMap(phiB*theta,T,x)); end for;
+     Append(~BorelsandS,BB);
+end for;
+        
+        AllPearls:=[];
+        
+for Bor in  BorelsandS  do
+	B:= Bor[1];
+	S:= Bor[2];
+	L:= LowerCentralSeries(S);
+	PotPearls:=[Bor[j]: j in [3..#Bor]];   
+
+	PotPearls2:=[];
+
+		for PP in PotPearls do 
+			for PP1 in PotPearls2 do
+				if IsConjugate(B,PP,PP1) then continue PP; end if;
+			end for;
+			Append(~PotPearls2, PP); 
+		end for;
+	PotPearls:= PotPearls2;  
+
+	Pearls:=[B];
+	for PP in  PotPearls do 
+		N:= Normalizer(B,PP); 
+		
+		MakeAutos(PP);
+		AutN:= AutYX(N,PP);
+		SL2:= SubInvMap(PP`autopermmap, PP`autogrp,DerivedSubgroup(PP`autoperm));
+		AutSPP:= AutYX(Normalizer(S,PP),PP);
+		D:=sub<PP`autogrp|AutN,SL2>;
+		 if #Normalizer(SubMap(PP`autopermmap, PP`autoperm,D), SubMap(PP`autopermmap, PP`autoperm,AutSPP)) eq #AutN then
+		 Append(~Pearls,PP); end if;
+	
+	end for;
+	if #Pearls ne 1 then Append(~AllPearls,Pearls); end if;
+end for;
+
+
+FusSys:=[];
+AutomiserSequences:=[];
+for FS in AllPearls do
+B:= FS[1]; 
+S:= pCore(B,p);
+A1:= AutYX(B,S);
+AutSeq:=[A1];
+	for ii in [2..#FS] do
+		Pearl:= FS[ii];
+		N:= Normalizer(FS[1],Pearl);
+		A2:= AutYX(N,Pearl);
+		SL2:= SubInvMap(Pearl`autopermmap, 	Pearl`autogrp,DerivedSubgroup(Pearl`autoperm));
+		Append(~AutSeq, sub<Pearl`autogrp| SL2,A2>);
+	end for;
+	Autos:= AutSeq;
+
+Append(~AutomiserSequences,AutSeq);
+if fusion then
+	
+	Bbar, bar:= B/Centre(S);
+	subsBS:= Subgroups(Bbar:OrderDividing:=#bar(S));
+	subsBS:= [Inverse(bar)(x`subgroup):x in subsBS];
+	 
+bounds:=[8,6,6,6];
+primes:=[2,3,4,4]; 
+///Puts the essentials in the standard order using group names.  
+//This will break if order of S is too big. Hence the else below
+ 
+ 
+ 
+if p in primes and #S le p^bounds[Index(primes,p)]  then  
+RO:=[IdentifyGroup( Group(x)):x in Autos];
+ParallelSort(~RO,~Autos);
+Reverse(~Autos);
+else
+RO:=[#Group(x):x in Autos];
+ParallelSort(~RO,~Autos);
+Reverse(~Autos); 
+end if; 
+    
+F:= New(FusionSystem);
+F`prime:=p;
+F`group:= S;    
+F`borel:= B;
+F`subgroups:=[x:x in subsBS];
+F`essentialautos:= Autos;
+F`essentials := [];
+for x in Autos do
+Append(~F`essentials, Group(x)); end for;
+F`AutF:= AssociativeArray(F`subgroups);
+for x in F`essentials do 
+F`AutF[x] := F`essentialautos[Index(F`essentials,x)]; 
+end for; 
+	
+	
+	
+	
+Append(~FusSys,F);
+end if;
+end for;
+if fusion then
+if #FusSys eq 0 then return []; end if;
+FusSys1:=[FusSys[1]];
+for x in FusSys do 
+	for y in FusSys1 do
+		if IsIsomorphic(x,y) then continue x; end if;
+	end for;
+	Append(~FusSys1,x); 
+end for;
+
+return FusSys;
+else return AutomiserSequences;
+end if;
+
+
+end intrinsic;
+         
