@@ -1,4 +1,4 @@
-//This file is created by Parker and Semeraro. This is version two. It corrects variious errors and adds further functionality
+//This file is created by Parker and Semeraro.
 //It contains programs designed to calculate with fusion systems.  
 //It also has programs to find all saturated fusion systems on 
 //a given p-group with trivial $p$-core and $p$-quotient. 
@@ -7,7 +7,7 @@
 //``Algorithms for fusion systems with applications 
 //to $p$-groups of small order" by Parker and  Semeraro
 //It also contains other functions that we found useful.
-//It works on Magma V2.25-4.  Load the file by Attach("FusionSystems.m");#
+//It works on Magma V2.25-4.  Load the file by Attach("FusionSystems.m");
 
 freeze;
 declare type FusionSystem;
@@ -1699,7 +1699,7 @@ for zz in [1..#ImEssentials] do
     ImAutEssentialsCalc:=[];
     for x in ImEssentialsCalc do 
             AutF1:= F1`essentialautos[Index(ImEssentialsCalc,x)];
-            XX:={Inverse(mu)*Inverse(theta)*gen*theta*mu:gen in Generators(AutF1)};
+            XX:=[Inverse(mu)*Inverse(theta)*gen*theta*mu:gen in Generators(AutF1)];
             ImAutEssentialsCalc:=Append(ImAutEssentialsCalc, sub<x`autogrp| XX>); 
     end for;
     
@@ -1781,17 +1781,13 @@ GrpEssentialAutos:=AssociativeArray(SS);
 GrpEssentialAutos[T]:=AutomiserGens(B1,T);
 
 for x in SS do 
-    if x eq T then continue; end if;
-    Nx:= Normalizer(G,x);
-    NTx:= Normalizer(T,x);
-    if Index(Nx,NTx) mod p eq 0 then continue; end if;  
-    kk := sub<G|Centralizer(G,x), x>;
-    
-    Q:=NTx/x;
- 
-    QC:= IsQuaternionOrCyclic(Q);
+
+if x eq T then continue; end if;
+
+NTx:= Normalizer(T,x);
+Q:=NTx/x;
+QC:= IsQuaternionOrCyclic(Q);
     if QC eq false then 
-        if #Factorisation(ZZ!(#Nx/#kk)) le 2 then continue; end if;
             if #Q le p^6 then TesT:= false;
                for SP in Testers do
                  if IsIsomorphic(Q,SP) then TesT := true; break; end if;
@@ -1799,6 +1795,14 @@ for x in SS do
              if TesT eq false  then continue; end if;
         end if;
     end if;  
+    Nx:= Normalizer(G,x);
+    
+    if Index(Nx,NTx) mod p eq 0 then continue; end if;  
+    kk := sub<G|Centralizer(G,x), x>;
+
+    if QC eq false and #Factorisation(ZZ!(#Nx/#kk)) le 2 then continue; end if;
+
+
    ISPE:=IsStronglypEmbeddedMod(Nx,kk,p);
     if ISPE then 
     EE:= Append(EE,x);
@@ -1818,7 +1822,7 @@ EEAA:=[];
 for i := 1 to #EEPC do
 Es:= EEPC[i];
 MakeAutos(Es);
-EEAA[i]:= sub<Es`autogrp|{Inverse(PhiB)*gamma*PhiB:gamma in GrpEssentialAutos[EE[i]]}>; 
+EEAA[i]:= sub<Es`autogrp|[Inverse(PhiB)*gamma*PhiB:gamma in GrpEssentialAutos[EE[i]]]>; 
 end for;
 
 F:=CreateFusionSystem(EEAA);
@@ -1952,7 +1956,7 @@ for zz in [1..#ImEssentials] do
     ImAutEssentialsCalc:=[];
     for x in ImEssentialsCalc do 
             AutF1:= Autos[Index(ImEssentialsCalc,x)];
-            XX:={Inverse(mu)*Inverse(theta)*gen*theta*mu:gen in Generators(AutF1)};
+            XX:=[Inverse(mu)*Inverse(theta)*gen*theta*mu:gen in Generators(AutF1)];
             ImAutEssentialsCalc:=Append(ImAutEssentialsCalc, sub<x`autogrp| XX>); 
     end for;
      
@@ -2558,7 +2562,7 @@ if IsMaximalClass(S) and #S ge p^5 then
        ProtoEssentials:=   TT;
 end if; 
         
-if IsMaximalClass(S) eq false then  
+if IsMaximalClass(S) eq false  or #S le p^4 then  
 for x in SS do   
 	if x eq S then continue x; end if; 
 	if IsCyclic(x) then  continue x; end if;
@@ -3131,8 +3135,8 @@ if m ne 1  then
             WW:=[];
             for jj in   [1..#yy`autF] do 
 		    Wx:= yy`autF[jj]; 
-		    WGens :={
-		    Inverse(alpha)*gamma*alpha: gamma in  Generators(Wx)};
+		    WGens :=[
+		    Inverse(alpha)*gamma*alpha: gamma in  Generators(Wx)];
 		    WW[jj]:=sub<xx`autogrp|WGens>; 
             end for;
             xx`autF:= WW;
@@ -3146,9 +3150,9 @@ else
         for ii in [3..#BB] do 
             xx:= BB[ii];yy:= ProtoEssentialAutClasses[ii-2]; MakeAutos(xx);WW:=[];
             for jj in   [1..#yy`autF] do 
-                WGens:={}; Wx:= yy`autF[jj]; 
+                WGens:=[]; Wx:= yy`autF[jj]; 
                     for gamma in Generators(Wx) do  
-                        WGens := WGens join {Inverse( theta)*gamma* theta}; 
+                        Append(~WGens,Inverse( theta)*gamma* theta); 
                     end for;
                 WW[jj]:=sub<xx`autogrp|WGens>; 
             end for;
@@ -3217,7 +3221,7 @@ for x in ProtoEssentialAutClasses do
             y:= PNew[j];
             y`autF:=[];
             for AP in x`autF do
-                        y`autF := Append(y`autF, sub<y`autogrp|{Inverse(Rx[Index(Xx,y)])*gamma*Rx[Index(Xx,y)]: gamma in Generators(AP)}>);
+                        y`autF := Append(y`autF, sub<y`autogrp|[Inverse(Rx[Index(Xx,y)])*gamma*Rx[Index(Xx,y)]: gamma in Generators(AP)]>);
             end for;
         end for; 
     end if;
@@ -3301,7 +3305,7 @@ while #ProtoEssentialsT ne #ProtoEssentialsTT  do
             Candidates1[P1]:= [];
             for AP in Candidates1[P] do
                 Append(~Candidates1[OrbP[nn]],
-                        sub<P1`autogrp|{Inverse(beta)*theta*beta: theta in Generators(AP)}>);
+                        sub<P1`autogrp|[Inverse(beta)*theta*beta: theta in Generators(AP)]>);
             end for;
         end for;
     Done := Done join Seqset(OrbP);
@@ -3555,8 +3559,8 @@ cpc:= #CPCart;
             	ee:= Essentials[i];  
             	jj:= Index(Essentials,SubMap(theta,S,ee));
             	eee:= Essentials[jj];  
-                J:= sub<eee`autogrp|{Inverse(theta)*gen*theta:gen in 
-                Generators(CandidatesNew[ee][ff[i]])}>; 
+                J:= sub<eee`autogrp|[Inverse(theta)*gen*theta:gen in 
+                Generators(CandidatesNew[ee][ff[i]])]>; 
                 Jp:= SubMap(eee`autopermmap, eee`autoperm,J);
                 kk:= Index(CandidatesNewp[eee],Jp); 
                 jjj:= Index(Essentials,eee);
